@@ -115,7 +115,7 @@ export function Navbar({
         {/* Right: GitHub & Theme Toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <a
-            href="https://github.com"
+            href="https://github.com/ShankarKarajanagi18/ai-web-summarizer"
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-ghost"
