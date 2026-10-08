@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extractContent, MIN_TEXT_CHARS } from "@/lib/extract";
+import { extractContent, MIN_TEXT_CHARS, MAX_TEXT_CHARS } from "@/lib/extract";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
@@ -133,17 +133,17 @@ async function fetchHtml(startUrl: URL): Promise<{ html: string; finalUrl: URL }
   throw new HttpError("Too many redirects.", 502);
 }
 
-/* ---------- AI summary (Google Gemini free tier) ---------- */
+/* ---------- AI summary (Groq free tier) ---------- */
 
 async function summarize(title: string, text: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new HttpError(
-      "Server is missing GEMINI_API_KEY. See the README for setup.",
+      "Server is missing GROQ_API_KEY. See the README for setup.",
       500
     );
   }
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
   const prompt = [
     "Summarize the web page content below for a busy reader.",
@@ -159,21 +159,19 @@ async function summarize(title: string, text: string): Promise<string> {
 
   let res: Response;
   try {
-    res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3 },
-        }),
-        signal: AbortSignal.timeout(45_000),
-      }
-    );
+    res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
   } catch {
     throw new HttpError("The AI service didn't respond in time. Try again.", 504);
   }
@@ -183,15 +181,12 @@ async function summarize(title: string, text: string): Promise<string> {
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    console.error("Gemini error", res.status, detail.slice(0, 500));
+    console.error("Groq error", res.status, detail.slice(0, 500));
     throw new HttpError("The AI service returned an error.", 502);
   }
 
   const data = await res.json();
-  const out: string | undefined = data?.candidates?.[0]?.content?.parts
-    ?.map((p: { text?: string }) => p.text ?? "")
-    .join("")
-    .trim();
+  const out: string | undefined = data?.choices?.[0]?.message?.content?.trim();
 
   if (!out) {
     throw new HttpError("The AI returned an empty response. Try another page.", 502);
@@ -211,7 +206,46 @@ export async function POST(request: Request) {
     const url = await assertPublicUrl(withProtocol);
 
     const { html, finalUrl } = await fetchHtml(url);
-    const { title, text } = extractContent(html);
+    let { title, text, metaDescription } = extractContent(html);
+
+    // If static HTML scraping didn't yield enough text (common with client-rendered SPAs),
+    // fall back to a reader renderer to fetch the client-side rendered text.
+    if (text.length < MIN_TEXT_CHARS) {
+      try {
+        const jinaRes = await fetch(`https://r.jina.ai/${finalUrl.toString()}`, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "AISummarizerBot/1.0",
+          },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (jinaRes.ok) {
+          const contentType = jinaRes.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const jinaData = await jinaRes.json();
+            const rendered = (jinaData?.data?.content ?? "").trim();
+            if (rendered.length >= MIN_TEXT_CHARS) {
+              text = rendered.slice(0, MAX_TEXT_CHARS);
+              if (!title && jinaData?.data?.title) {
+                title = jinaData.data.title;
+              }
+            }
+          } else {
+            const rendered = (await jinaRes.text()).trim();
+            if (rendered.length >= MIN_TEXT_CHARS) {
+              text = rendered.slice(0, MAX_TEXT_CHARS);
+            }
+          }
+        }
+      } catch {
+        // Fallback continues below
+      }
+    }
+
+    // If still under MIN_TEXT_CHARS, check if metaDescription provides sufficient context
+    if (text.length < MIN_TEXT_CHARS && metaDescription && metaDescription.length >= 50) {
+      text = metaDescription;
+    }
 
     if (text.length < MIN_TEXT_CHARS) {
       throw new HttpError(

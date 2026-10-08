@@ -4,12 +4,17 @@ export const MAX_TEXT_CHARS = 20_000; // text sent to the model
 export const MIN_TEXT_CHARS = 200;
 
 /** Pulls the page title and the main readable text out of raw HTML. */
-export function extractContent(html: string): { title: string; text: string } {
+export function extractContent(html: string): { title: string; text: string; metaDescription: string } {
   const $ = load(html);
 
   const title =
     $("meta[property='og:title']").attr("content")?.trim() ||
     $("title").first().text().trim() ||
+    "";
+
+  const metaDescription =
+    $("meta[name='description']").attr("content")?.trim() ||
+    $("meta[property='og:description']").attr("content")?.trim() ||
     "";
 
   $(
@@ -38,5 +43,5 @@ export function extractContent(html: string): { title: string; text: string } {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  return { title, text: text.slice(0, MAX_TEXT_CHARS) };
+  return { title, text: text.slice(0, MAX_TEXT_CHARS), metaDescription };
 }

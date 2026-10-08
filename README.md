@@ -1,126 +1,96 @@
-# AI Web Summarizer
+# SummarAI
 
-Paste a webpage URL, click **Summarize**, and get a short AI-written summary: a quick overview plus key takeaways.
+Turn long pages into useful summaries. A fast, minimal web intelligence tool that extracts executive summaries and key insights from any public webpage.
 
-- **Frontend:** React (Next.js App Router) with a single page, a URL input, and a loading state
-- **Backend:** Next.js API route at `POST /api/summarize`
-- **Scraping:** `fetch` + [Cheerio](https://cheerio.js.org/) (strips scripts, nav, footers, etc. and keeps the main text)
-- **AI:** [Google Gemini API](https://aistudio.google.com/) on the free tier (`gemini-2.5-flash` by default)
+## Features
 
-Frontend and backend live in one Next.js project, so one command runs both.
+- **Instant Summaries:** Extract core overviews and structured takeaways in seconds.
+- **SPA & Dynamic Page Support:** Automatic fallback to headless reader rendering for client-side JavaScript apps (React, Vite, Vue, Next.js).
+- **Safety First:** Built-in SSRF protection blocking private IPv4, IPv6, loopback addresses, and redirects.
+- **Reading Workspace:** Clean, editorial typography layout with reading time metrics and word condensation statistics.
+- **Local History:** Past summaries are automatically saved in browser local storage with instant search.
+- **Dark / Light Theme:** Thoughtfully designed neutral color system.
 
-## How it works
+## Tech Stack
 
-1. The browser sends `{ "url": "..." }` to `/api/summarize`.
-2. The server validates the URL (http/https only, blocks localhost and private IP ranges), downloads the HTML, and extracts the main text.
-3. The text (capped at ~20,000 characters) is sent to Gemini with a summarization prompt.
-4. The summary is returned as JSON and rendered on the page.
+- **Framework:** Next.js 15 (App Router) + React 19 + TypeScript
+- **Styling:** CSS design system (Inter + JetBrains Mono)
+- **Scraping:** Cheerio + Reader Pipeline
+- **AI Engine:** Groq API (Low-latency LPU inference)
 
-## Run locally
+---
 
-**Requirements:** Node.js 18.18+ (Node 20 or 22 recommended) and npm.
+## Getting Started
 
-### 1. Get a free Gemini API key
+### 1. Prerequisites
+- Node.js 18.18+ (Node 20 or 22 recommended)
+- A free Groq API key from [Groq Console](https://console.groq.com/keys)
 
-Create one at <https://aistudio.google.com/apikey> (no credit card needed).
-
-### 2. Install dependencies
+### 2. Installation
 
 ```bash
-git clone <your-repo-url>
+git clone <your-repository-url>
 cd ai-web-summarizer
 npm install
 ```
 
-### 3. Add your `.env` file
+### 3. Configure Environment
 
-Create a file named **`.env.local` in the project root** (the same folder as `package.json`):
+Copy the `.env.example` file to `.env.local`:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Then open `.env.local` and paste your key:
+Open `.env.local` and add your Groq API key:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
+# Optional: override model (default: openai/gpt-oss-120b)
+# GROQ_MODEL=openai/gpt-oss-120b
 ```
 
-Optional: set `GEMINI_MODEL` to use a different Gemini model (default: `gemini-2.5-flash`).
-
-> `.env.local` is git-ignored, so your key is never committed. Never put the key in frontend code. It is only read by the server route.
-
-### 4. Start the app (frontend and backend together)
+### 4. Run Locally
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:3000>. The UI and the API (`/api/summarize`) both run from this one process.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-To run a production build locally instead:
+---
 
-```bash
-npm run build
-npm start
-```
+## Deploying to Vercel (Recommended)
 
-## API
+1. Push your repository to GitHub (see below).
+2. Go to [vercel.com/new](https://vercel.com/new) and import your GitHub repository.
+3. In the **Environment Variables** section, add:
+   - `GROQ_API_KEY`: `your_groq_api_key_here`
+4. Click **Deploy**. Your site will be live on a `*.vercel.app` domain with automated SSL.
 
-`POST /api/summarize`
+---
 
-Request:
-
-```json
-{ "url": "https://example.com/some-article" }
-```
-
-Success (`200`):
-
-```json
-{
-  "title": "Page title",
-  "url": "https://example.com/some-article",
-  "summary": "Overview...\n\n- Key point\n- Key point",
-  "charactersAnalyzed": 4210
-}
-```
-
-Errors return `{ "error": "message" }` with an appropriate status code (`400` bad URL, `422` not enough text found, `429` AI rate limit, `502` page or AI service failure).
-
-Quick test with curl:
-
-```bash
-curl -X POST http://localhost:3000/api/summarize \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://en.wikipedia.org/wiki/Web_scraping"}'
-```
-
-## Deploy to Vercel
-
-1. Push this repo to GitHub.
-2. Go to <https://vercel.com/new> and import the repository (the Next.js preset is detected automatically).
-3. Under **Environment Variables**, add `GEMINI_API_KEY` with your key.
-4. Click **Deploy**. Vercel gives you a live URL.
-
-If you change the key later, update it under *Project → Settings → Environment Variables* and redeploy.
-
-## Project structure
+## Project Structure
 
 ```
 app/
-  page.tsx               # UI: input, Summarize button, loading, result card
-  layout.tsx
-  globals.css
-  api/summarize/route.ts # API: validate URL, fetch HTML, call Gemini
+  api/summarize/route.ts   # Backend API: SSRF guard, scraping, Groq synthesis
+  globals.css              # Editorial design system tokens & typography
+  layout.tsx               # Root layout & metadata
+  page.tsx                 # Main application state & view coordinator
+components/
+  Navbar.tsx               # Header navigation & theme toggle
+  Hero.tsx                 # Compact headline & description
+  UrlInput.tsx             # Command-line search bar & example links
+  FeaturesGrid.tsx         # Functional value propositions
+  SummaryDashboard.tsx     # Editorial reading workspace
+  HistoryDrawer.tsx        # Past summaries drawer with search
+  HowItWorksModal.tsx      # System architecture explanation
+  LoadingState.tsx         # Quiet, professional loading indicator
+  ErrorState.tsx           # Error callout & retry actions
+  Toast.tsx                # Copy & action feedback toasts
 lib/
-  extract.ts             # HTML -> clean main text (Cheerio)
-.env.example             # copy to .env.local
+  extract.ts               # Cheerio HTML parser & metadata extraction
+.env.example               # Environment template (git committed)
+.env.local                 # Local secret keys (git ignored)
 ```
-
-## Limitations
-
-- Only reads server-rendered HTML. Pages that need JavaScript to render (many SPAs) or that block bots may return too little text or a 403.
-- Very long pages are truncated to ~20,000 characters before summarizing.
-- The free Gemini tier is rate limited. If you see a rate-limit message, wait a minute and try again.
-- Basic SSRF protection is included (private and loopback addresses are blocked, including across redirects), but this is a demo, not a hardened proxy.
